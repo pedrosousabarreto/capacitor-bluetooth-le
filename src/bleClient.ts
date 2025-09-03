@@ -20,6 +20,8 @@ import { getQueue } from './queue';
 import { parseUUID } from './validators';
 
 export interface BleClientInterface {
+  startAdvertising():Promise<void>;
+
   /**
    * Initialize Bluetooth Low Energy (BLE). If it fails, BLE might be unavailable on this device.
    * On **Android** it will ask for the location permission. On **iOS** it will ask for the Bluetooth permission.
@@ -323,6 +325,25 @@ class BleClientClass implements BleClientInterface {
 
   disableQueue() {
     this.queue = getQueue(false);
+  }
+
+  /*waitForAcceptanceSign(txObject:any, callback: (value: string) => void): Promise<void> {
+      const enabled = await this.queue(async () => {
+          const result = await BluetoothLe.waitForAcceptanceSign();
+          return result.value;
+      });
+      return enabled;
+  }*/
+
+  async startAdvertising():Promise<void>{
+      await this.queue(async () => {
+          await BluetoothLe.startAdvertising();
+      });
+  }
+  async stopAdvertising():Promise<void>{
+      await this.queue(async () => {
+          await BluetoothLe.stopAdvertising();
+      });
   }
 
   async initialize(options?: InitializeOptions): Promise<void> {

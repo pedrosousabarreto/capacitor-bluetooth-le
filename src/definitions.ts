@@ -295,7 +295,34 @@ export interface ScanResult {
   rawAdvertisement?: DataView;
 }
 
+export interface OfflineRtpRequest{
+    gattServiceId: string;
+    gattReadCharacteristicId: string;
+    gattWriteCharacteristicId: string;
+    txEncString:DataView;
+
+}
+
 export interface BluetoothLePlugin {
+
+    /*
+    Payee                       Payer
+    ----------------------------------------
+    show qr                     connect
+                                startNotifications
+    send whole tx json          parse json, verify tx as user if accepts
+                                user accepts -> sign and write sig to characteristic
+    * */
+
+    /*waitForAcceptanceSign(txObject:any,callback: (value: boolean) => void): Promise<void>;
+*/
+    startAdvertising(): Promise<void>;
+    stopAdvertising(): Promise<void>;
+
+    // should return the payer's signature of the hash
+    initiateOfflineRequestToPay(request: OfflineRtpRequest): Promise<string>;
+    requestOfflineTransfer()
+
   initialize(options?: InitializeOptions): Promise<void>;
   isEnabled(): Promise<BooleanResult>;
   requestEnable(): Promise<void>;

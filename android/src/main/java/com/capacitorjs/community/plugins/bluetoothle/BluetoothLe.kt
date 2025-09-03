@@ -2,14 +2,26 @@ package com.capacitorjs.community.plugins.bluetoothle
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.annotation.TargetApi
 import android.app.Activity
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothAdapter.ACTION_REQUEST_ENABLE
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothGatt
 import android.bluetooth.BluetoothGattCharacteristic
+import android.bluetooth.BluetoothGattDescriptor
+import android.bluetooth.BluetoothGattServer
+import android.bluetooth.BluetoothGattServerCallback
+import android.bluetooth.BluetoothGattService
 import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothProfile
+import android.bluetooth.BluetoothServerSocket
+import android.bluetooth.BluetoothSocket
+import android.bluetooth.le.AdvertiseData
+import android.bluetooth.le.AdvertisingSet
+import android.bluetooth.le.AdvertisingSetCallback
+import android.bluetooth.le.AdvertisingSetParameters
+import android.bluetooth.le.BluetoothLeAdvertiser
 import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
@@ -25,6 +37,7 @@ import android.os.ParcelUuid
 import android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS
 import android.provider.Settings.ACTION_BLUETOOTH_SETTINGS
 import android.provider.Settings.ACTION_LOCATION_SOURCE_SETTINGS
+import android.widget.Toast
 import androidx.activity.result.ActivityResult
 import androidx.core.location.LocationManagerCompat
 import com.getcapacitor.JSArray
@@ -38,6 +51,8 @@ import com.getcapacitor.annotation.ActivityCallback
 import com.getcapacitor.annotation.CapacitorPlugin
 import com.getcapacitor.annotation.Permission
 import com.getcapacitor.annotation.PermissionCallback
+import java.nio.ByteBuffer
+
 import java.util.UUID
 
 
@@ -77,6 +92,11 @@ import java.util.UUID
                 "android.permission.BLUETOOTH_CONNECT",
             ], alias = "BLUETOOTH_CONNECT"
         ),
+        Permission(
+            strings = [
+                "android.permission.BLUETOOTH_ADVERTISE",
+            ], alias = "BLUETOOTH_ADVERTISE"
+        )
     ]
 )
 class BluetoothLe : Plugin() {
@@ -155,6 +175,356 @@ class BluetoothLe : Plugin() {
         }
         call.resolve()
     }
+
+
+
+    private var advertiser: BluetoothLeAdvertiser? = null
+    private var callback: AdvertisingSetCallback? = null
+    private var bluetoothGattServer: BluetoothGattServer? = null
+    private var serverSocket: BluetoothServerSocket? = null
+    private var socket: BluetoothSocket? = null
+
+    @TargetApi(Build.VERSION_CODES.O)
+    @PluginMethod
+    fun stopAdvertising(call: PluginCall){
+        if(advertiser == null || callback == null) return;
+
+        advertiser!!.stopAdvertisingSet(callback)
+    }
+
+
+    @TargetApi(Build.VERSION_CODES.Q)
+    @PluginMethod
+    fun startAdvertising(call: PluginCall){
+        if(advertiser == null) {
+            val enabled = bluetoothAdapter?.isEnabled == true
+            if (!enabled) {
+                Toast.makeText(this.context, "startAdvertising is NOT enabled", Toast.LENGTH_SHORT)
+                    .show();
+                return
+            }
+            advertiser = bluetoothAdapter?.bluetoothLeAdvertiser
+        }
+
+
+        // Check if all features are supported
+        if (!bluetoothAdapter!!.isLe2MPhySupported()) {
+            Logger.warn(TAG, "2M PHY not supported!")
+            return
+        }
+        if (!bluetoothAdapter!!.isLeExtendedAdvertisingSupported()) {
+            Logger.warn(TAG, "LE Extended Advertising not supported!")
+            return
+        }
+
+        Logger.warn(TAG, "Address: "+bluetoothAdapter!!.address+" Name: "+bluetoothAdapter!!.name);
+
+        val maxDataLength: Int = bluetoothAdapter!!.getLeMaximumAdvertisingDataLength()
+
+        // known GattCharacteristics UUIDs
+        val deviceNameCharacteristicId = "00002a00-0000-1000-8000-00805f9b34fb";
+
+        // known GattDescriptors UUIDs
+        val clientCharacteristicConfigurationId = "00002902-0000-1000-8000-00805f9b34fb";
+
+
+        val serviceUuidStr = "89efdd3a-a65b-40ce-b10d-44558cb9caaa";
+        var uuid = ParcelUuid(UUID.fromString(serviceUuidStr));
+
+        val readCharacteristicUuidStr = "89efdd3a-a65b-40ce-b10d-ccccccccccc1";
+        val readCharacteristic2UuidStr = "89efdd3a-a65b-40ce-b10d-ccccccccccc2";
+        val writeCharacteristicUuidStr = "89efdd3a-a65b-40ce-b10d-ccccccccccc3";
+
+
+        val parameters = (AdvertisingSetParameters.Builder())
+            .setLegacyMode(false)
+            .setConnectable(true)
+            .setScannable(false)
+            .setInterval(AdvertisingSetParameters.INTERVAL_MIN)
+            .setTxPowerLevel(AdvertisingSetParameters.TX_POWER_MIN)
+            .setPrimaryPhy(BluetoothDevice.PHY_LE_1M)
+            .setSecondaryPhy(BluetoothDevice.PHY_LE_2M)
+            .build()
+
+        val advertiseData = AdvertiseData.Builder()
+            //.setIncludeDeviceName(true)
+            //.setIncludeTxPowerLevel(true)
+            .addServiceUuid(uuid) // must be added to be found by service id
+            .build()
+
+        val scanResponseData = AdvertiseData.Builder()
+            .addServiceUuid(ParcelUuid(UUID.fromString(serviceUuidStr)))
+//            .setIncludeDeviceName(true)
+            .setIncludeTxPowerLevel(true)
+            .build()
+
+
+        callback = object : AdvertisingSetCallback() {
+
+            override fun onAdvertisingSetStarted(advertisingSet: AdvertisingSet,txPower: Int,status: Int) {
+                Logger.info(TAG, ("onAdvertisingSetStarted(): txPower:" + txPower + " , status: " + status))
+//                currentAdvertisingSet = advertisingSet
+                // After onAdvertisingSetStarted callback is called, you can modify the
+                // advertising data and scan response data:
+                if (status != ADVERTISE_SUCCESS) {
+                    Logger.warn(TAG, "onAdvertisingSetStarted failed - status:$status")
+                    return;
+                }
+            }
+
+            override fun onAdvertisingDataSet(advertisingSet: AdvertisingSet?, status: Int) {
+                Logger.info(TAG, "onAdvertisingDataSet() :status:$status")
+            }
+
+            override fun onScanResponseDataSet(advertisingSet: AdvertisingSet?, status: Int) {
+                Logger.info(TAG, "onScanResponseDataSet(): status:$status")
+            }
+
+            override fun onAdvertisingSetStopped(advertisingSet: AdvertisingSet?) {
+                Logger.info(TAG, "onAdvertisingSetStopped():")
+            }
+        }
+
+
+        advertiser!!.startAdvertisingSet(parameters, advertiseData, scanResponseData, null, null, callback)
+
+        ////////////////////////////////////////
+        // setup gatt service
+        ////////////////////////////////////////
+
+        val service = BluetoothGattService(UUID.fromString(serviceUuidStr), BluetoothGattService.SERVICE_TYPE_PRIMARY)
+
+        //add a read characteristic.
+        val psmReadCharacteristic: BluetoothGattCharacteristic = BluetoothGattCharacteristic(
+            UUID.fromString(readCharacteristic2UuidStr),
+            BluetoothGattCharacteristic.PROPERTY_READ,
+            BluetoothGattCharacteristic.PERMISSION_READ
+        );
+
+        val notifyReadCharacteristic: BluetoothGattCharacteristic = BluetoothGattCharacteristic(
+            UUID.fromString(readCharacteristicUuidStr),
+            BluetoothGattCharacteristic.PROPERTY_READ or BluetoothGattCharacteristic.PROPERTY_NOTIFY or BluetoothGattCharacteristic.PROPERTY_INDICATE,
+            BluetoothGattCharacteristic.PERMISSION_READ
+        );
+        // needs a descriptor
+        var readCharacteristicDesc: BluetoothGattDescriptor = BluetoothGattDescriptor(
+            UUID.fromString(clientCharacteristicConfigurationId),
+            BluetoothGattDescriptor.PERMISSION_WRITE or BluetoothGattDescriptor.PERMISSION_READ
+        );
+        notifyReadCharacteristic.addDescriptor(readCharacteristicDesc);
+
+
+        //add a write characteristic.
+        val writeCharacteristic: BluetoothGattCharacteristic = BluetoothGattCharacteristic(
+            UUID.fromString(writeCharacteristicUuidStr),
+            BluetoothGattCharacteristic.PROPERTY_WRITE,
+            BluetoothGattCharacteristic.PERMISSION_WRITE
+        );
+        writeCharacteristic.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT);
+
+        service.addCharacteristic(psmReadCharacteristic)
+        service.addCharacteristic(notifyReadCharacteristic)
+        service.addCharacteristic(writeCharacteristic)
+
+
+//        var respData:String = "very long response that needs to be broken up unto multiple parts, VERY LONG RESPONSE THAT NEEDS TO BE BROKEN UP UNTO MULTIPLE PARTS, very long response that needs to be broken up unto multiple parts, VERY LONG RESPONSE THAT NEEDS TO BE BROKEN UP UNTO MULTIPLE PARTS, very long response that needs to be broken up unto multiple parts, VERY LONG RESPONSE THAT NEEDS TO BE BROKEN UP UNTO MULTIPLE PARTS, END";
+        var respData:String = "{\"transferId\":\"a1d05beb-4b4a-49f9-8160-95b53dc7365e\",\"transferDate\":\"2025-08-25T23:05: 32.778Z\",\"senderDeviceId\":\"Pixel\",\"senderWalletAddress\":\"Pedro_Pixel\",\"recipientDeviceId\":\"iPhone\",\"recipientWalletAddress\":\"Elsa_iPhone\",\"tokens\":[{\"tokenId\":\"aec22fb45ab25a7ed9cd35e70417a045593d2a5b97c189c8cd2dc46b3781f9d2\",\"mintedForWalletAddress\":\"Pedro_Pixel\",\"signature\":\"TW5iwo3CmsOHw5rCpTBOw57ChsKrwpPChsOxwoHDqsOCwpvDkVXDvCfChcK8wot5KyjDuGYPw6vCscK0FVZOw7XCjSXCgxxSw6rCi8O5wrtBw5bDgAxcwr/CgDktwqdCaW1nw5rDp1FIw48MwqPCvyXDsmQHwq4gD8OqNCPDisOWTHkKW8Okw58yw6jCqMK3w7JFwpZrJT3DsD9ywqR4wps9w6DDlHLDh01mw7bClm7CusOyF8K5wrnCgnbCjAXCh0oaeG8qwp8QJcK5wrbCvMOQFU9XXFZiwpfDscKDYMO3QXYnTsO5w743w58lUMOpwpvCgsO5cm9iG8OBK8Kue2ZJw7lLwrERSsKhw7jCtcOowqBwwpgPwoYIdxIlQ1TCh8OTw6hiwppOw58lw5vChcKzwp7CusKnw7PDp8KwwqQ5K0RIw6nCu3/DimrCnRTDjcKTw7LDrlzDlMKuMsOzTU5jwqPCm8O0wohuPz7ChsKuwqBySjouw6PCqyLDph/DiyZtwpY=\"},{\"tokenId\":\"2a22547ba9243edd7ee353f9428609a00a0ad81af133a71e7f1299ae3ae73e19\",\"mintedForWalletAddress\":\"Pedro_Pixel\",\"signature\":\"VcK/wr5fPcOyNQk+eSMFwqvCgMKmw6Bsw4BSwoJfbTLDtnVHZTRuV2zDm8O2w7jCj8O8Z8OOdFRlMHw6wqnCvnRQOcO+wo9iNcKoUnZ+w5zCgCE5S8KAw5wJw5lmw7FJwrZxfRPDmcOHw75Rw6/Do0zDrcKCw60kw7/CoMKHw6VBwrQWw53CgcOJwqEMwqpswr/DqUVJAcO/wpt+c8ODXkzCjBXDqsOIwrc/bMOLwpRpw4lXIj0uw6fDp25RTTPChRDDicOJQihQCiZ2wq/ClcKGwpDCq8KhBSIAwqjDvMOHwpvDsWTDn1rClQXDgcOvbMOfw63DtHfDnsOtEz47VgMow7AgwqxREcKNwoASecOgGMKqw4NUBMOpwovCu8KHwq/CnFXCrWQIwoDDsXlUelnClQHCtsOffz8iw6gONlFQW2kbYzTDosO8wrkQw49qwqLDj8K+bTDCpsODP0LCjMO4XDDDtH1kwr7Dk1cNfkp0w7HDlX0A\"},{\"tokenId\":\"9c9a6e4fb84c640b793618ff64c23f7ea0396743b7b3c5a56858d22fd1e19436\",\"mintedForWalletAddress\":\"Pedro_Pixel\",\"signature\":\"wqg/w6hEw5FUwr5sQsKyFATDi8KbRzHCiMO6w40aIMOCwpsKYBnCocKXw7/DgMOGwqMtMcKEb8OWWRkTFMOMw63DgMOcOUs4wpzCk8O7wrjDnxTCkHHCvVsDw6DCpGxdwqXDulU/QcO4XsK4ccO3w7lXwoDDv3DCkjLCt8KwDXrCiMOvw5Row73ChcKCwozDj8K5wrZBw4BlCMOmHE7CvcOjXDzCr8KlP3fDhlhAGsOfw6Nnw4HCl8Kmck5jPsO4ccO8V2g/FcOLWQ8JwqzDkhjCqcOUw5pAFWfDkjd0w6ZVBzrChcO5w6vCuADDvsK+w6jDuVlkwq9eEGRzZcOwR8OBw74OSMKhLxDCqlfDpMK4w5MQQ8OkwqXCjEjCh8OowpPCiErCrRp0AihKfy4FQmtFPhJOw6E9KsOkw5olQwwUw4t6YcOEBsKuwqJjwrbDgnzDuTI0YcOrGXNowqITwrLDmVTDhyjDpMOZwoImw7lAwoV1w73Ds1LDr8O+\"}],\"previousTransfers\":[],\"hash\":\"36c38d2d2e47d0aa4793870c7f821c583c59865dc017c2bd0b1e4d0336256cbf\",\"senderSignature\":\"wonDicKdWsKFw5fCicOGw5hmw4oKAX01w7Qlw73Dt8KKw4YTWmg2w4zCr8KHw7gTG8KreMO2w77DkVY3wrLDpsKsw49VwolPVQw8woYNwpvDs3XDqsOYZsKJwoTDosKCM8O7w6zCoMOWB8OqN8KJwqMTwrEOIcKLVSFFbB1HQwcQw4LDl1BqOinDn8OewpwUwpYKwoIKwo1uw4vDosOfwrXDkMOlwqHDi0wtw6U4w7Vyw55Ow5rDhD3Dr8KDwpQawoPCoR7DqMOOw4zCsGDChlV3w6pkw44JcH7DtcOLw6kQO8KSeMOsQ8KPw4XCqMKbw77CmXA9bzfDr8K1ZsKNwrrDs1DDjWPDkirClUhRByHCpcKqAh7DjcKOw4XCgU7DoCh6DsOKU8OEwooow6ZKNMK4TcK9w77DvhlELiHCt8Obw6d/w6B0w67CgcOowp/DpcKTacOvw6fDjsOqLsOzNxLCucO3GzgmwpRDCsKhwrbCsUXCgxvDlMOew6HCtGY2woJewpd/woR9wprCpExK\",\"recipientSignature\":\"U8OIwo7DpC3Cv8K4w7p/wrsiV8Oawrpfw6sjdwXDo8OyUHkZw6/DkzBATAfDicKeRMO1wqgSwolOwqdlwp8uExY1FmvCgxATw4PDkFjCvcO5wp3DgsOqw4Vgw6YcCw7Dm8KJw7XDuXYIwokeCsKBDsKYbMOvY8OowrHClAR1AhIDeg7Ch8K9QmHDkUbCo8Kdw5XDksOyUsOIw4DCvTBDwr1lQiYfw4rCuMKHNMOvw7rDpSPDtkFWw5rCpsKkECbCgMKSw6EfRSkjwqMDwpY+woxdw7/CvS3Cs8KLHcKpwoLCmg5Sw73CqsOvdSlNNGnChznCtHAHQ0DDpMOWwqo9wrkkw6vDvz7CscKHZSMWDnfCnsOqwrcvwrDDtlHCkVQ/PQxpwpLCtk3DqwVzC8KMaMOhFcKGwoUxw4xqQMODwoDDv8OawoVXw7cHw5wrwrLCqh/Dq8OkGMK2w7pSURoeBydzQcOBwpDCqsKnw74swokwwovCmnzCkMOIRcKvw4bCgcOC\"}";
+        var negotiatedMtu:Int = 0;
+
+        var chunkIndex = 0;
+        var chunks: List<String>? = null;
+
+        val callback: BluetoothGattServerCallback = object : BluetoothGattServerCallback() {
+            override fun onConnectionStateChange(device: BluetoothDevice?,status: Int,newState: Int) {
+                super.onConnectionStateChange(device, status, newState)
+
+                if(device == null) return;
+                Logger.info(TAG, "onConnectionStateChange() device address:" +device!!.address.toString() + " status: "+status.toString());
+            }
+
+            override fun onServiceAdded(status: Int, service: BluetoothGattService?) {
+                super.onServiceAdded(status, service)
+            }
+
+            override fun onCharacteristicReadRequest(device: BluetoothDevice?, requestId: Int, offset: Int, characteristic: BluetoothGattCharacteristic?) {
+                super.onCharacteristicReadRequest(device, requestId, offset, characteristic)
+                if(bluetoothGattServer == null) {
+                    return;
+                }
+
+                if(characteristic!!.uuid.compareTo(UUID.fromString(readCharacteristic2UuidStr)) !== 0) {
+                    bluetoothGattServer!!.sendResponse(device, requestId, BluetoothGatt.GATT_FAILURE, 0,null);
+                    return;
+                }
+
+                // send psm
+                val psm = serverSocket!!.psm;
+                bluetoothGattServer!!.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS,
+                    offset, ByteBuffer.allocate(Int.SIZE_BYTES).putInt(psm).array());
+
+                Logger.info(TAG, "onCharacteristicReadRequest: sent PSM $psm");
+                return;
+
+//
+//                if(chunks == null) {
+//                    chunks = respData.chunked(negotiatedMtu);
+//                }
+///*
+//
+//                if(chunkIndex >= chunks.size){
+//
+//                }
+//
+//                Logger.info(TAG, "onCharacteristicReadRequest - sending chunk index: $chunkIndex");
+//                bluetoothGattServer!!.sendResponse(
+//                    device, requestId, BluetoothGatt.GATT_SUCCESS,
+//                    offset, chunks!![offset].toByteArray(Charsets.UTF_8)
+//                );
+//                chunkIndex++;
+//*/
+//
+///*
+//
+//                    var respDataParts =  respData.chunked(negotiatedMtu);
+//                    respDataParts.forEachIndexed{index, part->
+//                        Logger.info(TAG, "characteristic: sent part offset $offset chunk len: ${part.length} ret offset: ${index*negotiatedMtu}")
+//                        bluetoothGattServer!!.sendResponse(
+//                            device, requestId, BluetoothGatt.GATT_SUCCESS,
+////                        retOffset, respDataParts[offset].toByteArray(Charsets.UTF_8)
+//                            index*negotiatedMtu, part.toByteArray(Charsets.UTF_8)
+//                        );
+//                    }
+//
+//                    var chunkIndex = (respData.length + negotiatedMtu -1) / negotiatedMtu;
+//                    if(offset >= respDataParts.size){
+//                        //error
+//                        Logger.error("Invalid offset");
+//                        return
+//                    }
+//
+//                    var retOffset = offset;
+////                    if(respDataParts[offset].length < negotiatedMtu){
+////                        retOffset = -1;
+////                    }
+//*/
+//
+//                if(offset > respData.length){
+//                    bluetoothGattServer!!.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS,
+////                        retOffset, respDataParts[offset].toByteArray(Charsets.UTF_8)
+//                        offset,  byteArrayOf()
+//                    );
+//                    Logger.info(TAG, "characteristic: requested offset $offset chunk len: EMPTY");
+//                    return;
+//                }
+//                val end = if(offset + negotiatedMtu >= respData.length) respData.length else offset + negotiatedMtu;
+//                val respStr = respData.substring(offset, end);
+//
+//                Logger.info(TAG, "characteristic: requested offset $offset chunk len: ${respStr.length} ")
+//
+//                bluetoothGattServer!!.sendResponse(
+//                    device, requestId, BluetoothGatt.GATT_SUCCESS,
+//                    offset, respStr.toByteArray(Charsets.UTF_8)
+//                );
+
+
+            }
+
+            override fun onCharacteristicWriteRequest(device: BluetoothDevice?, requestId: Int, characteristic: BluetoothGattCharacteristic?,
+                                                      preparedWrite: Boolean, responseNeeded: Boolean, offset: Int, value: ByteArray?) {
+                super.onCharacteristicWriteRequest(device, requestId, characteristic, preparedWrite, responseNeeded, offset, value)
+
+
+                bluetoothGattServer!!.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, null);
+
+                if(value === "EOF".toByteArray(Charsets.UTF_8)){
+                    Logger.info(TAG, "Received EOF");
+                }else{
+//                    Logger.info(TAG, "Received write data: "+ Base64.getDecoder().decode(value));
+                    Logger.info(TAG, "Received write data: "+ value?.toString(Charsets.US_ASCII));
+                }
+
+
+//                writeCharacteristic.setValue(value?.toString(Charsets.UTF_8));
+            }
+
+            override fun onDescriptorWriteRequest(device: BluetoothDevice?, requestId: Int, descriptor: BluetoothGattDescriptor?,
+                                                  preparedWrite: Boolean, responseNeeded: Boolean, offset: Int, value: ByteArray?) {
+                super.onDescriptorWriteRequest(device, requestId, descriptor, preparedWrite, responseNeeded, offset, value)
+
+                Logger.info(TAG, "got onDescriptorWriteRequest with offset: "+offset);
+
+                if(descriptor!!.uuid.compareTo(readCharacteristicDesc.uuid) !== 0) {
+                    bluetoothGattServer!!.sendResponse(device, requestId, BluetoothGatt.GATT_FAILURE, offset, byteArrayOf());
+                    return;
+                }
+
+                bluetoothGattServer!!.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, byteArrayOf());
+
+                Thread.sleep(100);
+//                bluetoothGattServer!!.notifyCharacteristicChanged(device!!, readCharacteristic, false, "pedro".toByteArray())
+
+                var respDataParts =  respData.chunked(negotiatedMtu-1);
+                respDataParts.forEachIndexed{index, part->
+                    Logger.info(TAG, "characteristic notification: sent part offset $offset chunk len: ${part.length} ret offset: ${index*negotiatedMtu}")
+                    bluetoothGattServer!!.notifyCharacteristicChanged(device!!, notifyReadCharacteristic, true,
+                        part.toByteArray(Charsets.UTF_8)
+                    );
+                }
+                bluetoothGattServer!!.notifyCharacteristicChanged(device!!, notifyReadCharacteristic, true,
+                    "EOF".toByteArray(Charsets.UTF_8)
+                );
+
+            }
+
+            override fun onDescriptorReadRequest(device: BluetoothDevice?, requestId: Int, offset: Int, descriptor: BluetoothGattDescriptor?) {
+                super.onDescriptorReadRequest(device, requestId, offset, descriptor)
+            }
+
+            override fun onNotificationSent(device: BluetoothDevice?, status: Int) {
+                super.onNotificationSent(device, status)
+            }
+
+            override fun onMtuChanged(device: BluetoothDevice?, mtu: Int) {
+                super.onMtuChanged(device, mtu);
+                negotiatedMtu = mtu-1;
+            }
+
+            override fun onExecuteWrite(device: BluetoothDevice?, requestId: Int, execute: Boolean) {
+                super.onExecuteWrite(device, requestId, execute)
+            }
+        }
+
+        bluetoothGattServer = (activity.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager).openGattServer(this.context, callback)
+
+        bluetoothGattServer!!.addService(service);
+
+        Toast.makeText(this.context,"advertising started", Toast.LENGTH_SHORT).show();
+        Logger.info(TAG, "bluetooth device address: " + bluetoothAdapter!!.address.toString())
+        Logger.info(TAG, "bluetooth device name: ${bluetoothAdapter!!.name}")
+
+        serverSocket = bluetoothAdapter!!.listenUsingInsecureL2capChannel();
+
+        Logger.info(TAG, "bluetooth channel setup waiting for connection - PSM is: ${serverSocket!!.psm}")
+        socket = serverSocket!!.accept()
+
+        Logger.info(TAG, "bluetooth channel got connection")
+
+        while(true){
+            val avail = socket!!.inputStream.available()
+            if(avail>0) {
+                val tempBuf = ByteArray(avail)
+                socket!!.inputStream.read(tempBuf)
+
+                socket!!.outputStream.write("FROM_SERVER".toByteArray())
+            }
+        }
+
+    }
+
+
+
+
+
 
     @PluginMethod
     fun isEnabled(call: PluginCall) {
