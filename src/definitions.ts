@@ -324,8 +324,8 @@ export interface BluetoothLePlugin {
     stopAdvertising(): Promise<void>;
 
     // should return the payer's signature of the hash
-    initiateOfflineRequestToPay(txEncString:DataView): Promise<string>;
-    inspectOfflineRequestToPay():Promise<DataView>;
+    initiateOfflineRequestToPay(txEncString:string): Promise<string>;
+    inspectOfflineRequestToPay():Promise<string>;
     acceptOfflineRequestToPay(recipientSig:string):Promise<void>;
 
   initialize(options?: InitializeOptions): Promise<void>;

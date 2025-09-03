@@ -21,6 +21,11 @@ import { parseUUID } from './validators';
 
 export interface BleClientInterface {
   startAdvertising():Promise<void>;
+  stopAdvertising():Promise<void>;
+
+  initiateOfflineRequestToPay(txEncString:string): Promise<string>;
+  inspectOfflineRequestToPay():Promise<string>;
+  acceptOfflineRequestToPay(recipientSig:string):Promise<void>;
 
   /**
    * Initialize Bluetooth Low Energy (BLE). If it fails, BLE might be unavailable on this device.
@@ -345,6 +350,28 @@ class BleClientClass implements BleClientInterface {
           await BluetoothLe.stopAdvertising();
       });
   }
+
+  async initiateOfflineRequestToPay(txEncString:string): Promise<string>{
+      const response = await this.queue(async () => {
+          const result = await BluetoothLe.initiateOfflineRequestToPay(txEncString);
+          return result;
+      });
+      return response;
+  }
+
+async inspectOfflineRequestToPay():Promise<string>{
+    const response = await this.queue(async () => {
+        const result = await BluetoothLe.inspectOfflineRequestToPay();
+        return result;
+    });
+    return response;
+}
+async acceptOfflineRequestToPay(recipientSig:string):Promise<void>{
+    await this.queue(async () => {
+        await BluetoothLe.acceptOfflineRequestToPay(recipientSig);
+    });
+}
+
 
   async initialize(options?: InitializeOptions): Promise<void> {
     await this.queue(async () => {
