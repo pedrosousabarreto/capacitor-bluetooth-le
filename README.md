@@ -55,6 +55,11 @@ Below is an index of all the methods available.
 <docgen-index>
 
 - [`startAdvertising()`](#startadvertising)
+- [`stopAdvertising()`](#stopadvertising)
+- [`setupPayeeBle()`](#setuppayeeble)
+- [`waitForPayerResponse(...)`](#waitforpayerresponse)
+- [`requestRtpDetailsFromPayee()`](#requestrtpdetailsfrompayee)
+- [`respondToRequestToPay(...)`](#respondtorequesttopay)
 - [`initialize(...)`](#initialize)
 - [`isEnabled()`](#isenabled)
 - [`requestEnable()`](#requestenable)
@@ -383,6 +388,60 @@ _Note_: web support depends on the browser, see [implementation status](https://
 ```typescript
 startAdvertising() => Promise<void>
 ```
+
+---
+
+### stopAdvertising()
+
+```typescript
+stopAdvertising() => Promise<void>
+```
+
+---
+
+### setupPayeeBle()
+
+```typescript
+setupPayeeBle() => Promise<OfflineRtpBleDetails>
+```
+
+**Returns:** <code>Promise&lt;<a href="#offlinertpbledetails">OfflineRtpBleDetails</a>&gt;</code>
+
+---
+
+### waitForPayerResponse(...)
+
+```typescript
+waitForPayerResponse(params: OfflineRtpDetails) => Promise<OfflineRtpResponse>
+```
+
+| Param        | Type                                                            |
+| ------------ | --------------------------------------------------------------- |
+| **`params`** | <code><a href="#offlinertpdetails">OfflineRtpDetails</a></code> |
+
+**Returns:** <code>Promise&lt;<a href="#offlinertpresponse">OfflineRtpResponse</a>&gt;</code>
+
+---
+
+### requestRtpDetailsFromPayee()
+
+```typescript
+requestRtpDetailsFromPayee() => Promise<OfflineRtpDetails>
+```
+
+**Returns:** <code>Promise&lt;<a href="#offlinertpdetails">OfflineRtpDetails</a>&gt;</code>
+
+---
+
+### respondToRequestToPay(...)
+
+```typescript
+respondToRequestToPay(params: OfflineRtpResponse) => Promise<void>
+```
+
+| Param        | Type                                                              |
+| ------------ | ----------------------------------------------------------------- |
+| **`params`** | <code><a href="#offlinertpresponse">OfflineRtpResponse</a></code> |
 
 ---
 
@@ -911,6 +970,26 @@ Stop listening to the changes of the value of a characteristic. For an example, 
 ---
 
 ### Interfaces
+
+#### OfflineRtpBleDetails
+
+| Prop              | Type                |
+| ----------------- | ------------------- |
+| **`serviceUuid`** | <code>string</code> |
+| **`psm`**         | <code>number</code> |
+
+#### OfflineRtpResponse
+
+| Prop                 | Type                 |
+| -------------------- | -------------------- |
+| **`accepted`**       | <code>boolean</code> |
+| **`payerSignature`** | <code>string</code>  |
+
+#### OfflineRtpDetails
+
+| Prop              | Type                |
+| ----------------- | ------------------- |
+| **`txEncString`** | <code>string</code> |
 
 #### InitializeOptions
 

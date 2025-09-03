@@ -54,6 +54,7 @@ import com.getcapacitor.annotation.PermissionCallback
 import java.nio.ByteBuffer
 
 import java.util.UUID
+import kotlin.concurrent.thread
 
 
 @SuppressLint("MissingPermission")
@@ -116,6 +117,7 @@ class BluetoothLe : Plugin() {
     private var displayStrings: DisplayStrings? = null
     private var aliases: Array<String> = arrayOf()
 
+
     override fun load() {
         displayStrings = getDisplayStrings()
     }
@@ -176,10 +178,18 @@ class BluetoothLe : Plugin() {
         call.resolve()
     }
 
+    /******************************************************************************************************************************
+    * Start custom code
+    ******************************************************************************************************************************/
+
+    // known GattCharacteristics UUIDs
+    private val deviceNameCharacteristicId = "00002a00-0000-1000-8000-00805f9b34fb";
+    // known GattDescriptors UUIDs
+    private val clientCharacteristicConfigurationId = "00002902-0000-1000-8000-00805f9b34fb";
 
 
     private var advertiser: BluetoothLeAdvertiser? = null
-    private var callback: AdvertisingSetCallback? = null
+    private var advertisingSetCallback: AdvertisingSetCallback? = null
     private var bluetoothGattServer: BluetoothGattServer? = null
     private var serverSocket: BluetoothServerSocket? = null
     private var socket: BluetoothSocket? = null
@@ -187,9 +197,9 @@ class BluetoothLe : Plugin() {
     @TargetApi(Build.VERSION_CODES.O)
     @PluginMethod
     fun stopAdvertising(call: PluginCall){
-        if(advertiser == null || callback == null) return;
+        if(advertiser == null || advertisingSetCallback == null) return;
 
-        advertiser!!.stopAdvertisingSet(callback)
+        advertiser!!.stopAdvertisingSet(advertisingSetCallback)
     }
 
 
@@ -223,23 +233,18 @@ class BluetoothLe : Plugin() {
 
         // known GattCharacteristics UUIDs
         val deviceNameCharacteristicId = "00002a00-0000-1000-8000-00805f9b34fb";
-
         // known GattDescriptors UUIDs
         val clientCharacteristicConfigurationId = "00002902-0000-1000-8000-00805f9b34fb";
 
-
-        val serviceUuidStr = "89efdd3a-a65b-40ce-b10d-44558cb9caaa";
-        var uuid = ParcelUuid(UUID.fromString(serviceUuidStr));
+        val serviceUuidStr = UUID.randomUUID();
+        var uuid = ParcelUuid(serviceUuidStr);
 
         val readCharacteristicUuidStr = "89efdd3a-a65b-40ce-b10d-ccccccccccc1";
         val readCharacteristic2UuidStr = "89efdd3a-a65b-40ce-b10d-ccccccccccc2";
         val writeCharacteristicUuidStr = "89efdd3a-a65b-40ce-b10d-ccccccccccc3";
 
-
         val parameters = (AdvertisingSetParameters.Builder())
-            .setLegacyMode(false)
-            .setConnectable(true)
-            .setScannable(false)
+            .setLegacyMode(false).setConnectable(true).setScannable(false)
             .setInterval(AdvertisingSetParameters.INTERVAL_MIN)
             .setTxPowerLevel(AdvertisingSetParameters.TX_POWER_MIN)
             .setPrimaryPhy(BluetoothDevice.PHY_LE_1M)
@@ -253,13 +258,13 @@ class BluetoothLe : Plugin() {
             .build()
 
         val scanResponseData = AdvertiseData.Builder()
-            .addServiceUuid(ParcelUuid(UUID.fromString(serviceUuidStr)))
+            .addServiceUuid(ParcelUuid(serviceUuidStr))
 //            .setIncludeDeviceName(true)
             .setIncludeTxPowerLevel(true)
             .build()
 
 
-        callback = object : AdvertisingSetCallback() {
+        advertisingSetCallback = object : AdvertisingSetCallback() {
 
             override fun onAdvertisingSetStarted(advertisingSet: AdvertisingSet,txPower: Int,status: Int) {
                 Logger.info(TAG, ("onAdvertisingSetStarted(): txPower:" + txPower + " , status: " + status))
@@ -286,13 +291,13 @@ class BluetoothLe : Plugin() {
         }
 
 
-        advertiser!!.startAdvertisingSet(parameters, advertiseData, scanResponseData, null, null, callback)
+        advertiser!!.startAdvertisingSet(parameters, advertiseData, scanResponseData, null, null, advertisingSetCallback)
 
         ////////////////////////////////////////
         // setup gatt service
         ////////////////////////////////////////
 
-        val service = BluetoothGattService(UUID.fromString(serviceUuidStr), BluetoothGattService.SERVICE_TYPE_PRIMARY)
+        val service = BluetoothGattService(serviceUuidStr, BluetoothGattService.SERVICE_TYPE_PRIMARY)
 
         //add a read characteristic.
         val psmReadCharacteristic: BluetoothGattCharacteristic = BluetoothGattCharacteristic(
@@ -518,12 +523,175 @@ class BluetoothLe : Plugin() {
                 socket!!.outputStream.write("FROM_SERVER".toByteArray())
             }
         }
+    }
+
+    @TargetApi(Build.VERSION_CODES.Q)
+    @PluginMethod
+    fun setupPayeeBle(call: PluginCall){
+        assertBluetoothAdapter(call) ?: return
+
+        if(advertiser == null) {
+            val enabled = bluetoothAdapter?.isEnabled == true
+            if (!enabled) {
+                Toast.makeText(this.context, "startAdvertising is NOT enabled", Toast.LENGTH_SHORT)
+                    .show();
+                return
+            }
+            advertiser = bluetoothAdapter?.bluetoothLeAdvertiser
+        }
+
+        // Check if all features are supported
+        if (!bluetoothAdapter!!.isLe2MPhySupported()) {
+            Logger.warn(TAG, "2M PHY not supported!")
+            return
+        }
+        if (!bluetoothAdapter!!.isLeExtendedAdvertisingSupported()) {
+            Logger.warn(TAG, "LE Extended Advertising not supported!")
+            return
+        }
+        val maxDataLength: Int = bluetoothAdapter!!.getLeMaximumAdvertisingDataLength()
+        Logger.warn(TAG, "Address: "+bluetoothAdapter!!.address+" Name: "+bluetoothAdapter!!.name + " maxDataLength: "+maxDataLength);
+
+        val serviceUuid = UUID.randomUUID();
+        var uuid = ParcelUuid(serviceUuid);
+
+
+        val parameters = (AdvertisingSetParameters.Builder())
+            .setLegacyMode(false).setConnectable(true).setScannable(false)
+            .setInterval(AdvertisingSetParameters.INTERVAL_MIN)
+            .setTxPowerLevel(AdvertisingSetParameters.TX_POWER_MIN)
+            .setPrimaryPhy(BluetoothDevice.PHY_LE_1M)
+            .setSecondaryPhy(BluetoothDevice.PHY_LE_2M)
+            .build()
+
+        val advertiseData = AdvertiseData.Builder()
+            .addServiceUuid(uuid) // must be added to be found by service id
+            .setIncludeDeviceName(true)
+            .build()
+
+        advertisingSetCallback = object : AdvertisingSetCallback() {
+            override fun onAdvertisingSetStarted(advertisingSet: AdvertisingSet,txPower: Int,status: Int) {
+                Logger.info(TAG, ("onAdvertisingSetStarted(): txPower:" + txPower + " , status: " + status))
+                if (status != ADVERTISE_SUCCESS) {
+                    Logger.warn(TAG, "onAdvertisingSetStarted failed - status:$status")
+                    call.reject("onAdvertisingSetStarted failed - status:$status");
+                    return;
+                }
+            }
+
+            override fun onAdvertisingDataSet(advertisingSet: AdvertisingSet?, status: Int) {
+                Logger.info(TAG, "onAdvertisingDataSet() :status:$status")
+            }
+            override fun onScanResponseDataSet(advertisingSet: AdvertisingSet?, status: Int) {
+                Logger.info(TAG, "onScanResponseDataSet(): status:$status")
+            }
+            override fun onAdvertisingSetStopped(advertisingSet: AdvertisingSet?) {
+                Logger.info(TAG, "onAdvertisingSetStopped():")
+            }
+        }
+
+        advertiser!!.startAdvertisingSet(parameters, advertiseData, null, null, null, advertisingSetCallback)
+
+        Logger.info(TAG, "bluetooth device address: " + bluetoothAdapter!!.address.toString())
+        Logger.info(TAG, "bluetooth device name: ${bluetoothAdapter!!.name}")
+        Logger.info(TAG, "bluetooth service id: ${serviceUuid.toString()}")
+
+        serverSocket = bluetoothAdapter!!.listenUsingInsecureL2capChannel();
+        Logger.info(TAG, "bluetooth channel setup waiting for connection - PSM is: ${serverSocket!!.psm}")
+
+        // return psm
+        val ret = JSObject()
+        ret.put("psm", serverSocket!!.psm)
+        ret.put("serviceUuid", serviceUuid.toString())
+        call.resolve(ret)
+
+    /*
+        socket = serverSocket!!.accept()
+
+        Logger.info(TAG, "bluetooth channel got connection")
+
+        while(true){
+            val avail = socket!!.inputStream.available()
+            if(avail>0) {
+                val tempBuf = ByteArray(avail)
+                socket!!.inputStream.read(tempBuf)
+
+                socket!!.outputStream.write("FROM_SERVER".toByteArray())
+            }
+        }
+
+
+        serverSocket = bluetoothAdapter!!.listenUsingInsecureL2capChannel();
+
+        Logger.info(TAG, "bluetooth channel setup waiting for connection - PSM is: ${serverSocket!!.psm}")
+        // return psm
+        val ret = JSObject()
+        ret.put("psm", serverSocket!!.psm)
+        ret.put("serviceUuid", serverSocket!!.psm)
+        call.resolve(ret)
+
+        socket = serverSocket!!.accept()
+        Logger.info(TAG, "bluetooth channel got connection")
+
+        while(true){
+            socket!!.outputStream.write("FROM_SERVER".toByteArray()) // replace with txData
+
+            val avail = socket!!.inputStream.available()
+            if(avail>0) {
+                val tempBuf = ByteArray(avail)
+                socket!!.inputStream.read(tempBuf)
+            }
+        }
+*/
+    }
+
+    @TargetApi(Build.VERSION_CODES.Q)
+    @PluginMethod
+    fun waitForPayerResponse(call: PluginCall){
+        assertBluetoothAdapter(call) ?: return
+
+        if(advertiser == null || serverSocket == null) {
+            call.reject("Must call setupPayeeBle first");
+            return;
+        }
+
+        if(!call.data.has("txEncString")){
+            call.reject("Must provide txEncString");
+            return;
+        }
+        var txData = call.getString("txEncString")
+
+        socket = serverSocket!!.accept()
+        Logger.info(TAG, "bluetooth channel got connection")
+
+        // send data
+        socket!!.outputStream.write("FROM_SERVER".toByteArray())
+
+        while(true){
+            val avail = socket!!.inputStream.available()
+            if(avail>0) {
+                val tempBuf = ByteArray(avail)
+                socket!!.inputStream.read(tempBuf)
+            }
+            Thread.sleep(50);
+        }
+    }
+
+    @TargetApi(Build.VERSION_CODES.Q)
+    @PluginMethod
+    fun requestRtpDetailsFromPayee(call: PluginCall){
 
     }
 
+    @TargetApi(Build.VERSION_CODES.Q)
+    @PluginMethod
+    fun respondToRequestToPay(call: PluginCall){
 
+    }
 
-
+    /******************************************************************************************************************************
+     * End custom code
+     ******************************************************************************************************************************/
 
 
     @PluginMethod

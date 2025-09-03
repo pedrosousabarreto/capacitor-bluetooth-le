@@ -1,30 +1,31 @@
 import { WebPlugin } from '@capacitor/core';
 
 import { hexStringToDataView, mapToObject, webUUIDToString } from './conversion';
-import type {
-  BleCharacteristic,
-  BleCharacteristicProperties,
-  BleDescriptor,
-  BleService,
-  TimeoutOptions,
-  BleDevice,
-  BleServices,
-  BluetoothLePlugin,
-  BooleanResult,
-  DeviceIdOptions,
-  GetConnectedDevicesOptions,
-  GetDevicesOptions,
-  GetDevicesResult,
-  ReadDescriptorOptions,
-  ReadOptions,
-  ReadResult,
-  ReadRssiResult,
-  RequestBleDeviceOptions,
-  ScanResultInternal,
-  WriteOptions,
-  WriteDescriptorOptions,
-  GetMtuResult,
-  RequestConnectionPriorityOptions,
+import {
+    BleCharacteristic,
+    BleCharacteristicProperties,
+    BleDescriptor,
+    BleService,
+    TimeoutOptions,
+    BleDevice,
+    BleServices,
+    BluetoothLePlugin,
+    BooleanResult,
+    DeviceIdOptions,
+    GetConnectedDevicesOptions,
+    GetDevicesOptions,
+    GetDevicesResult,
+    ReadDescriptorOptions,
+    ReadOptions,
+    ReadResult,
+    ReadRssiResult,
+    RequestBleDeviceOptions,
+    ScanResultInternal,
+    WriteOptions,
+    WriteDescriptorOptions,
+    GetMtuResult,
+    RequestConnectionPriorityOptions,
+    OfflineRtpResponse, OfflineRtpDetails, OfflineRtpBleDetails,
 } from './definitions';
 import { runWithTimeout } from './timeout';
 
@@ -57,15 +58,21 @@ export class BluetoothLeWeb extends WebPlugin implements BluetoothLePlugin {
     throw this.unavailable('stopAdvertising is not available on web.');
   }
 
-  async initiateOfflineRequestToPay(txEncString: string): Promise<string> {
-    throw this.unavailable('initiateOfflineRequestToPay is not available on web.');
+    // @ts-ignore
+  async setupPayeeBle(): Promise<OfflineRtpBleDetails>{
+    throw this.unavailable('setupPayeeBle is not available on web.');
   }
-  async inspectOfflineRequestToPay(): Promise<string> {
-    throw this.unavailable('inspectOfflineRequestToPay is not available on web.');
+// @ts-ignore
+  async waitForPayerResponse(params:OfflineRtpDetails): Promise<OfflineRtpResponse> {
+    throw this.unavailable('waitForPayerResponse is not available on web.');
   }
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  async acceptOfflineRequestToPay(recipientSig: string): Promise<void> {
-    throw this.unavailable('acceptOfflineRequestToPay is not available on web.');
+    // @ts-ignore
+  async requestRtpDetailsFromPayee():Promise<OfflineRtpDetails> {
+    throw this.unavailable('requestRtpDetailsFromPayee is not available on web.');
+  }
+  // @ts-ignore
+  async respondToRequestToPay(params:OfflineRtpResponse):Promise<void>{
+    throw this.unavailable('respondToRequestToPay is not available on web.');
   }
 
   async requestEnable(): Promise<void> {

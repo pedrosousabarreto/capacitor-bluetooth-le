@@ -301,32 +301,39 @@ export interface ScanResult {
 //     txEncString:DataView;
 // }
 
-export interface OfflineRtpRequest{
-    // gattServiceId: string;
-    // psmCharacteristicId: string;
-    txEncString:DataView;
+
+export interface OfflineRtpBleDetails{
+    serviceUuid: string;
+    psm:number;
 }
+
+export interface OfflineRtpDetails{
+    txEncString:string;
+}
+export interface OfflineRtpResponse {
+    accepted: boolean;
+    payerSignature?: string;
+}
+
+export interface InspectOfflineRtpResult{
+    txEncString:string;
+}
+
 
 export interface BluetoothLePlugin {
 
-    /*
-    Payee                       Payer
-    ----------------------------------------
-    show qr                     connect
-                                startNotifications
-    send whole tx json          parse json, verify tx as user if accepts
-                                user accepts -> sign and write sig to characteristic
-    * */
-
-    /*waitForAcceptanceSign(txObject:any,callback: (value: boolean) => void): Promise<void>;
-*/
     startAdvertising(): Promise<void>;
     stopAdvertising(): Promise<void>;
 
-    // should return the payer's signature of the hash
-    initiateOfflineRequestToPay(txEncString:string): Promise<string>;
-    inspectOfflineRequestToPay():Promise<string>;
-    acceptOfflineRequestToPay(recipientSig:string):Promise<void>;
+    // PAYEE start bluetooth and return serviceUuid and psm
+    setupPayeeBle(): Promise<OfflineRtpBleDetails>;
+    // PAYEE pass tx info and wait for response
+    waitForPayerResponse(params:OfflineRtpDetails): Promise<OfflineRtpResponse>;
+
+    // PAYER - from the QR, connect to BLE to ask for the tx data, validate and request user approval
+    requestRtpDetailsFromPayee():Promise<OfflineRtpDetails>;
+    // PAYER - responds to request to pay with accept or reject
+    respondToRequestToPay(params:OfflineRtpResponse):Promise<void>;
 
   initialize(options?: InitializeOptions): Promise<void>;
   isEnabled(): Promise<BooleanResult>;

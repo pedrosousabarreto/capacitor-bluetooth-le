@@ -3,17 +3,18 @@ import { Capacitor } from '@capacitor/core';
 
 import type { DisplayStrings } from './config';
 import { dataViewToHexString, hexStringToDataView } from './conversion';
-import type {
-  BleDevice,
-  BleService,
-  ConnectionPriority,
-  Data,
-  InitializeOptions,
-  ReadResult,
-  RequestBleDeviceOptions,
-  ScanResult,
-  ScanResultInternal,
-  TimeoutOptions,
+import {
+    BleDevice,
+    BleService,
+    ConnectionPriority,
+    Data,
+    InitializeOptions,
+    OfflineRtpBleDetails, OfflineRtpDetails, OfflineRtpResponse,
+    ReadResult,
+    RequestBleDeviceOptions,
+    ScanResult,
+    ScanResultInternal,
+    TimeoutOptions,
 } from './definitions';
 import { BluetoothLe } from './plugin';
 import { getQueue } from './queue';
@@ -23,9 +24,15 @@ export interface BleClientInterface {
   startAdvertising():Promise<void>;
   stopAdvertising():Promise<void>;
 
-  initiateOfflineRequestToPay(txEncString:string): Promise<string>;
-  inspectOfflineRequestToPay():Promise<string>;
-  acceptOfflineRequestToPay(recipientSig:string):Promise<void>;
+    // PAYEE start bluetooth and return serviceUuid and psm
+    setupPayeeBle(): Promise<OfflineRtpBleDetails>;
+    // PAYEE pass tx info and wait for response
+    waitForPayerResponse(params:OfflineRtpDetails): Promise<OfflineRtpResponse>;
+
+    // PAYER - from the QR, connect to BLE to ask for the tx data, validate and request user approval
+    requestRtpDetailsFromPayee():Promise<OfflineRtpDetails>;
+    // PAYER - responds to request to pay with accept or reject
+    respondToRequestToPay(params:OfflineRtpResponse):Promise<void>;
 
   /**
    * Initialize Bluetooth Low Energy (BLE). If it fails, BLE might be unavailable on this device.
@@ -351,24 +358,33 @@ class BleClientClass implements BleClientInterface {
       });
   }
 
-  async initiateOfflineRequestToPay(txEncString:string): Promise<string>{
+  async setupPayeeBle(): Promise<OfflineRtpBleDetails>{
       const response = await this.queue(async () => {
-          const result = await BluetoothLe.initiateOfflineRequestToPay(txEncString);
+          const result = await BluetoothLe.setupPayeeBle();
           return result;
       });
       return response;
   }
 
-async inspectOfflineRequestToPay():Promise<string>{
+async waitForPayerResponse(params:OfflineRtpDetails): Promise<OfflineRtpResponse>{
     const response = await this.queue(async () => {
-        const result = await BluetoothLe.inspectOfflineRequestToPay();
+        const result = await BluetoothLe.waitForPayerResponse(params);
         return result;
     });
     return response;
 }
-async acceptOfflineRequestToPay(recipientSig:string):Promise<void>{
+
+async requestRtpDetailsFromPayee():Promise<OfflineRtpDetails>{
+    const response = await this.queue(async () => {
+        const result = await BluetoothLe.requestRtpDetailsFromPayee();
+        return result;
+    });
+    return response;
+}
+
+async respondToRequestToPay(params:OfflineRtpResponse):Promise<void>{
     await this.queue(async () => {
-        await BluetoothLe.acceptOfflineRequestToPay(recipientSig);
+        await BluetoothLe.respondToRequestToPay(params);
     });
 }
 
