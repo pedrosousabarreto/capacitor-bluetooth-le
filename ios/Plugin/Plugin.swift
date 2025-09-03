@@ -14,7 +14,7 @@ struct ManufacturerDataFilter {
 }
 
 @objc(BluetoothLe)
-public class BluetoothLe: CAPPlugin {
+public class BluetoothLe: CAPPlugin,  CBPeripheralDelegate, StreamDelegate {
     typealias BleDevice = [String: Any]
     typealias BleService = [String: Any]
     typealias BleCharacteristic = [String: Any]
@@ -22,6 +22,10 @@ public class BluetoothLe: CAPPlugin {
     private var deviceManager: DeviceManager?
     private var deviceMap = [String: Device]()
     private var displayStrings = [String: String]()
+
+    private var peripheral: CBPeripheral?
+    private var channel: CBL2CAPChannel?
+
 
     override public func load() {
         self.displayStrings = self.getDisplayStrings()
@@ -224,6 +228,66 @@ public class BluetoothLe: CAPPlugin {
         call.resolve(["devices": bleDevices])
     }
 
+
+
+
+
+    public func stream(_ aStream: Stream, handle eventCode: Stream.Event)
+    {
+        switch eventCode
+        {
+        case Stream.Event.openCompleted:
+            log("Stream Event .openCompleted: \(aStream) is open")
+        case Stream.Event.endEncountered:
+            log("Stream Event .endEncountered")
+            self.cleaUpL2CAP()
+        case Stream.Event.hasBytesAvailable:
+            log("Stream Event .hasBytesAvailable")
+        case Stream.Event.hasSpaceAvailable:
+            log("Stream Event .hasSpaceAvailable")
+        case Stream.Event.errorOccurred:
+            log("Stream Event .errorOccurred")
+        default:
+            log("Unknown stream event")
+        }
+    }
+
+    private func cleaUpL2CAP()
+    {
+        log("Closing Streams")
+        self.channel?.inputStream.close()
+        self.channel?.outputStream.close()
+
+        self.channel?.inputStream.remove(from: .main, forMode: .default)
+        self.channel?.outputStream.remove(from: .main, forMode: .default)
+
+        self.channel?.inputStream.delegate = nil
+        self.channel?.outputStream.delegate = nil
+
+        self.channel = nil
+    }
+
+
+
+    public func peripheral(_ peripheral: CBPeripheral, didOpen channel: CBL2CAPChannel?, error: Error? ){
+        log("Connected to peripheral. Waiting for service discovery.")
+
+        self.channel = channel
+        self.channel?.inputStream.delegate = self
+        self.channel?.outputStream.delegate = self
+        self.channel?.inputStream.schedule(in: RunLoop.main, forMode: .default)
+        self.channel?.outputStream.schedule(in: RunLoop.main, forMode: .default)
+        self.channel?.inputStream.open()
+        self.channel?.outputStream.open()
+    }
+
+
+    //////////////////////////////////////////////////////////////// 1
+    ////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////
+
+
+
     @objc func connect(_ call: CAPPluginCall) {
         guard self.getDeviceManager(call) != nil else { return }
         guard let device = self.getDevice(call, checkConnection: false) else { return }
@@ -231,7 +295,25 @@ public class BluetoothLe: CAPPlugin {
         device.setOnConnected(timeout, {(success, message) in
             if success {
                 // only resolve after service discovery
-                call.resolve()
+                self.peripheral = device.getPeripheral()
+
+                device.read( CBUUID(string: "89efdd3a-a65b-40ce-b10d-44558cb9caaa"),
+                             CBUUID(string: "89efdd3a-a65b-40ce-b10d-ccccccccccc2"), DEFAULT_TIMEOUT,
+                             {(success, value) in
+                    if success {
+
+                        let psm = UInt16(value)
+
+                        self.peripheral!.delegate = self
+                        self.peripheral!.openL2CAPChannel(psm!)
+
+                        call.resolve()
+                    } else {
+                        call.reject(value)
+                    }
+                })
+
+
             } else {
                 call.reject(message)
             }
@@ -247,6 +329,9 @@ public class BluetoothLe: CAPPlugin {
                 call.reject(message)
             }
         })
+
+
+
 
     }
 

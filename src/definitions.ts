@@ -295,12 +295,16 @@ export interface ScanResult {
   rawAdvertisement?: DataView;
 }
 
-export interface OfflineRtpRequest{
-    gattServiceId: string;
-    gattReadCharacteristicId: string;
-    gattWriteCharacteristicId: string;
-    txEncString:DataView;
+// export interface OfflineRtpRequest{
+//     // gattServiceId: string;
+//     // psmCharacteristicId: string;
+//     txEncString:DataView;
+// }
 
+export interface OfflineRtpRequest{
+    // gattServiceId: string;
+    // psmCharacteristicId: string;
+    txEncString:DataView;
 }
 
 export interface BluetoothLePlugin {
@@ -320,8 +324,9 @@ export interface BluetoothLePlugin {
     stopAdvertising(): Promise<void>;
 
     // should return the payer's signature of the hash
-    initiateOfflineRequestToPay(request: OfflineRtpRequest): Promise<string>;
-    requestOfflineTransfer()
+    initiateOfflineRequestToPay(txEncString:DataView): Promise<string>;
+    inspectOfflineRequestToPay():Promise<DataView>;
+    acceptOfflineRequestToPay(recipientSig:string):Promise<void>;
 
   initialize(options?: InitializeOptions): Promise<void>;
   isEnabled(): Promise<BooleanResult>;

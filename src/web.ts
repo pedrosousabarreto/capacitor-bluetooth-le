@@ -50,15 +50,25 @@ export class BluetoothLeWeb extends WebPlugin implements BluetoothLePlugin {
     return { value: true };
   }
 
-    async startAdvertising(): Promise<void> {
-        throw this.unavailable('startAdvertising is not available on web.');
-    }
-    async stopAdvertising(): Promise<void> {
-        throw this.unavailable('stopAdvertising is not available on web.');
-    }
+  async startAdvertising(): Promise<void> {
+    throw this.unavailable('startAdvertising is not available on web.');
+  }
+  async stopAdvertising(): Promise<void> {
+    throw this.unavailable('stopAdvertising is not available on web.');
+  }
 
+  async initiateOfflineRequestToPay(txEncString: DataView): Promise<string> {
+    throw this.unavailable('initiateOfflineRequestToPay is not available on web.');
+  }
+  async inspectOfflineRequestToPay(): Promise<DataView> {
+    throw this.unavailable('inspectOfflineRequestToPay is not available on web.');
+  }
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  async acceptOfflineRequestToPay(recipientSig: string): Promise<void> {
+    throw this.unavailable('acceptOfflineRequestToPay is not available on web.');
+  }
 
-    async requestEnable(): Promise<void> {
+  async requestEnable(): Promise<void> {
     throw this.unavailable('requestEnable is not available on web.');
   }
 
